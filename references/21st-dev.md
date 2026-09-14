@@ -3111,4 +3111,1636 @@ export default function FloatingIconsHeroDemo() {
 
 ---
 
+## Globe Study (Interactive Text Globe)
+- **Category**: interactive canvas art / decorative visualization — unusual, high-effort piece
+- **Stack**: React wrapper around a fully self-contained vanilla-JS/HTML/Canvas2D "study" — NOT a normal React component internally. The entire visualization (~400 lines of plain JS driving a `<canvas>`) is embedded as a giant HTML string and rendered inside a sandboxed `<iframe srcDoc={...}>`. Only the outer wrapper (`mode`/`scale`/`opacity`/`hue`/`saturation`/`brightness` props, light/dark theming, CSS filter effects) is real React/TypeScript.
+- **Deps**: none beyond React — no canvas/animation libraries, it's hand-rolled Canvas2D math
+- **Source/license note**: The embedded HTML/JS is explicitly commented in the source as adapted from **MengTo/threeui** (MIT licensed), specifically its "text-on-a-path" shader studies — this is disclosed in the component's own code comment, not something to strip out. Keep that attribution comment intact if this is reused, since it credits the actual author of the underlying visualization technique.
+- **Summary**: Renders an interactive rotating globe made entirely of monospaced text — a hidden phrase is spelled out letter-by-letter across landmasses (determined by an embedded base64-encoded land/sea bitmap), while ocean and other land points render as small dot glyphs. The globe auto-idles with a slow spin, responds to drag-to-rotate and scroll-to-zoom, and clicking places small ping/pulse markers ("pins") on the surface that fade over time. Ships with dark/light theming built into both the outer React wrapper and the embedded HTML's own CSS variables, plus a `GlobeStudy` React prop layer for `scale`/`opacity`/hue-rotate/saturation/brightness post-processing via CSS `filter`.
+- **Notes**: Architecturally very different from every other stashed component — really "a vanilla JS art piece wrapped in an iframe for React interop," not a typical composable UI component. Worth flagging: (1) `sandbox="allow-scripts"` on the iframe means it can't reach the parent page's DOM/state — treat it as a fully isolated visual widget, not something to wire to app state or theming beyond the `mode`/color props already exposed; (2) because it's an iframe, it won't inherit the project's Tailwind/CSS design tokens automatically — the dark/light color values are hardcoded inside the embedded HTML's own `<style>` block, so matching it to a project's theme means editing those hardcoded hex/rgba values inside the string, not just passing Tailwind classes; (3) it's a heavy, showy centerpiece — best suited to a single hero/about-page moment, not a repeated pattern across many sections. Good candidate for a "why work with us"/manifesto/about-page hero rather than a generic decorative background. Because the embedded source is long (~400 lines of canvas math), when this gets used, fetch or reuse the component's full original file rather than reconstructing the canvas logic from a description — this stash entry keeps the wrapper code complete but abbreviates the embedded HTML/JS for length; don't invent globe rendering logic from scratch.
+
+```tsx
+import { useMemo, type CSSProperties } from "react";
+
+// Verbatim (trimmed to the 'globe' study) from MengTo/threeui, MIT licensed:
+// src/shaders/text-path-studies/sources/text-on-a-path-ii.html
+//
+// NOTE: the full embedded HTML/JS string (canvas setup, land/sea bitmap,
+// globe projection math, drag/zoom/pin interaction handlers, and the
+// requestAnimationFrame render loop — several hundred lines) is abbreviated
+// here for length. Keep the original complete GLOBE_STUDY_SOURCE string
+// intact when actually using this component.
+const GLOBE_STUDY_SOURCE = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Text on a Path II — Globe</title>
+<style>
+  :root{
+    --bg:#08090a;
+    --line:rgba(255,255,255,.028);
+    --fig:rgba(255,255,255,.24);
+    --title:#f2f3f5;
+    --copy:rgba(255,255,255,.46);
+  }
+  /* ...full study CSS omitted for brevity... */
+</style>
+</head>
+<body>
+  <!-- canvas + interaction script rendering the rotating text globe -->
+</body>
+</html>
+`;
+
+export type GlobeStudyProps = {
+  mode?: "dark" | "light";
+  scale?: number;
+  opacity?: number;
+  hue?: number;
+  saturation?: number;
+  brightness?: number;
+  className?: string;
+  style?: CSSProperties;
+};
+
+export const GLOBE_STUDY_DEFAULTS = {
+  mode: "dark",
+  scale: 1,
+  opacity: 1,
+  hue: 0,
+  saturation: 1,
+  brightness: 1,
+} as const;
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function focusStyles(mode: "dark" | "light") {
+  const surface = mode === "light" ? "#f3f5f8" : "#08090a";
+  const themeStyles =
+    mode === "light"
+      ? `
+      :root {
+        color-scheme: light;
+        --bg: #f3f5f8;
+        --line: rgba(20, 24, 32, .055);
+        --fig: rgba(20, 24, 32, .42);
+        --title: #171922;
+        --copy: rgba(20, 24, 32, .62);
+      }
+    `
+      : ":root { color-scheme: dark; }";
+
+  return `<style id="threeui-study-focus">
+    ${themeStyles}
+    html, body, .frame { width: 100% !important; height: 100% !important; overflow: hidden !important; }
+    body { margin: 0 !important; background: ${surface} !important; }
+    header, .fig h3, .fig p, .fignum { display: none !important; }
+    .grid { display: block !important; width: 100% !important; height: 100% !important; }
+    .fig { display: none !important; }
+    .fig:nth-child(1) { display: flex !important; width: 100% !important; height: 100% !important; padding: 0 !important; }
+    .art { display: flex !important; width: 100% !important; height: 100% !important; margin: 0 !important; align-items: center; justify-content: center; }
+    .plate { width: min(100cqw, 100cqh) !important; height: min(100cqw, 100cqh) !important; }
+  </style>`;
+}
+
+function focusedDocument(mode: "dark" | "light") {
+  const source = mode === "light"
+    ? GLOBE_STUDY_SOURCE.replace("var INK  = '226,228,233';", "var INK  = '38,40,48';")
+    : GLOBE_STUDY_SOURCE;
+
+  return source
+    .replace(/<title>[\s\S]*?<\/title>/i, `<title>Globe — ThreeUI</title>`)
+    .replace("</head>", `${focusStyles(mode)}\n</head>`);
+}
+
+export default function GlobeStudy({
+  mode = GLOBE_STUDY_DEFAULTS.mode,
+  scale = GLOBE_STUDY_DEFAULTS.scale,
+  opacity = GLOBE_STUDY_DEFAULTS.opacity,
+  hue = GLOBE_STUDY_DEFAULTS.hue,
+  saturation = GLOBE_STUDY_DEFAULTS.saturation,
+  brightness = GLOBE_STUDY_DEFAULTS.brightness,
+  className,
+  style,
+}: GlobeStudyProps) {
+  const safeMode = mode === "light" ? "light" : "dark";
+  const document = useMemo(() => focusedDocument(safeMode), [safeMode]);
+  const boundedScale = clamp(scale, 0.65, 1.5);
+  const boundedOpacity = clamp(opacity, 0.1, 1);
+  const boundedHue = clamp(hue, -180, 180);
+  const boundedSaturation = clamp(saturation, 0, 2);
+  const boundedBrightness = clamp(brightness, 0.4, 1.8);
+  const filter =
+    boundedHue === 0 && boundedSaturation === 1 && boundedBrightness === 1
+      ? undefined
+      : `hue-rotate(${boundedHue}deg) saturate(${boundedSaturation}) brightness(${boundedBrightness})`;
+
+  return (
+    <div
+      className={["text-path-study", `text-path-study--${safeMode}`, className].filter(Boolean).join(" ")}
+      data-mode={safeMode}
+      style={{ opacity: boundedOpacity, filter, width: "100%", height: "100%", ...style }}
+    >
+      <iframe
+        className="text-path-study-frame"
+        data-mode={safeMode}
+        title="Globe interactive canvas study"
+        sandbox="allow-scripts"
+        srcDoc={document}
+        style={{
+          width: "100%",
+          height: "100%",
+          border: "none",
+          display: "block",
+          transform: boundedScale === 1 ? undefined : `scale(${boundedScale})`,
+        }}
+      />
+    </div>
+  );
+}
+```
+
+**Demo usage:**
+```tsx
+import GlobeStudy from "@/components/ui/globe-study";
+
+const settings = {
+  mode: "dark",
+  scale: 1,
+  opacity: 1,
+  hue: 0,
+  saturation: 1,
+  brightness: 1,
+};
+
+export default function Demo(props: Partial<typeof settings>) {
+  const s = { ...settings, ...props };
+  return (
+    <div className="h-screen w-full">
+      <GlobeStudy {...(s as any)} />
+    </div>
+  );
+}
+```
+
+---
+
+## Dot Border Button
+- **Category**: button / hover micro-interaction — small, isolated effect (same "iframe study" architecture as Globe Study above)
+- **Stack**: React wrapper around a fully self-contained plain-HTML/CSS button, rendered inside a sandboxed `<iframe srcDoc={...}>` — same pattern as the Globe Study entry: only the outer wrapper (`mode`/`hue`/`saturation`/`brightness` props, an isolation script that hides everything except the target button, CSS filter post-processing) is real React/TypeScript. The actual button/animation is vanilla HTML + CSS (`:has()` selector-driven hover animations, no JS animation logic at all beyond the isolation bootstrap).
+- **Deps**: none beyond React for the wrapper. The **embedded iframe HTML itself loads Tailwind via `<script src="https://cdn.tailwindcss.com">`** at runtime (the Tailwind Play CDN) — that's a live external network request every time this iframe renders, separate from and in addition to the project's own build-time Tailwind. It's sandboxed inside the iframe so it can't affect the parent app's styles, but it's still a runtime CDN dependency worth knowing is there — mention it before using this in production or an offline-capable app.
+- **Source/license note**: Explicitly commented in the source as verbatim from **MengTo/threeui** (MIT licensed), from its "neuform-isolated" component studies — same attribution family as the Globe Study entry. Keep the attribution comment intact when reused.
+- **Summary**: A button with a "measured/drafting" hover effect — on hover, four small square dots animate outward toward the corners while dashed border lines "draw themselves" inward from each edge (via staggered `scaleX`/`scaleY` keyframe animations with sequential `animation-delay`s), plus a diagonal grid-pattern overlay that fades in behind the button. Button itself has a simple scale + letter-spacing hover/active state and ships with a default "Start Creating" label and an arrow/pencil-style SVG icon. Fully theme-able via CSS custom properties already exposed in the source (`--dot-size`, `--line-weight`, `--line-distance`, `--animation-speed`, `--dot-color`, `--line-color`, `--grid-color`) — these can be tweaked without touching the animation logic itself.
+- **Notes**: Uses the CSS `:has()` selector for hover-state chaining (`.btn-wrapper:has(.btn:hover)`) — this is broadly supported in modern evergreen browsers but not in older ones; check the project's browser support target before relying on it. Because it's isolated in a sandboxed iframe like Globe Study, this is a lot of architectural overhead (a whole loaded HTML document + Tailwind CDN fetch + isolation script) for what is fundamentally a single CSS-only button effect — if the project doesn't already have other iframe-based "studies" from this same source, it's usually simpler to just port the raw CSS (the `.btn-wrapper`/`.dot`/`.line` rules and keyframes) directly into the project's own stylesheet/component rather than keeping the iframe wrapper, unless isolation from the parent page's styles is specifically wanted. The placeholder `href="#"` click is already prevented inside the embedded script, so it's non-navigating out of the box — swap in a real `onClick`/href by editing the embedded HTML's button markup, since props don't currently expose a way to pass a click handler through the iframe boundary.
+
+```tsx
+import { useMemo, type CSSProperties } from "react";
+
+type FocusRole = "background" | "button" | "visual";
+type EffectMode = "light" | "dark";
+
+type FocusTarget = {
+  selector: string;
+  role: FocusRole;
+  preserveTransform?: boolean;
+};
+
+type EffectDefinition = {
+  title: string;
+  source: string;
+  background: string;
+  targets: readonly FocusTarget[];
+  theme?: {
+    lightBackground: string;
+    darkBackground: string;
+  };
+};
+
+export type DotBorderButtonProps = {
+  mode?: EffectMode;
+  hue?: number;
+  saturation?: number;
+  brightness?: number;
+  className?: string;
+  style?: CSSProperties;
+};
+
+const DOT_BORDER_BUTTON_DEFAULTS = {
+  mode: "dark",
+  hue: 0,
+  saturation: 1,
+  brightness: 1,
+} as const;
+
+// Verbatim from MengTo/threeui:
+// src/shaders/neuform-isolated/sources/dot-border-button.html
+const DOT_BORDER_BUTTON_SOURCE = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Component Preview</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; }
+    body {
+      height: 100%;
+      overflow: auto;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #000000;
+      color: #ffffff;
+    }
+    .component-wrapper { width: 100%; height: 100%; padding: 0; box-sizing: border-box; overflow: auto; }
+  </style>
+</head>
+<body>
+  <div class="component-wrapper">
+    <div style="display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #000;">
+      <a href="#" class="btn-wrapper" style="--dot-size: 8px; --line-weight: 1px; --line-distance: 0.8rem 1rem; --animation-speed: 0.35s; --dot-color: #fffa; --line-color: #fffa; --grid-color: #fff3; position: relative; display: inline-flex; justify-content: center; align-items: center; width: auto; height: auto; padding: var(--line-distance); background-color: rgba(0, 0, 0, 0); user-select: none">
+        <style>
+          .btn-wrapper::after {
+            content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            border-radius: inherit; pointer-events: none; background-color: #0000;
+            background-image: repeating-linear-gradient(45deg, var(--grid-color) 0 1px, transparent 2px 5px);
+            opacity: 0; z-index: -1;
+          }
+          .btn-wrapper:has(.btn:hover)::after { animation: opacity-anim calc(var(--animation-speed) * 4) ease-in-out forwards; }
+          @keyframes opacity-anim { 80% { opacity: 0; } 100% { opacity: 1; } }
+
+          .btn-wrapper .btn {
+            position: relative; display: flex; justify-content: center; align-items: center;
+            padding: 0.8rem 1.25rem; background-color: #fff0; border: 1px solid var(--grid-color);
+            color: #fffd; font-family: "Inter", sans-serif; letter-spacing: -0.01em;
+            font-size: 1rem; font-weight: 600; text-transform: capitalize; border-radius: 6px;
+            cursor: pointer; transition: transform .2s ease-in-out, letter-spacing .2s ease-in-out;
+          }
+          .btn-wrapper .btn:hover { background-color: #25358b; color: #fff; transform: scale(1.05); letter-spacing: .06em; }
+          .btn-wrapper .btn:active { background-color: #25358b; transform: scale(.98); letter-spacing: .02em; }
+          .btn-wrapper .btn-svg { margin-left: .5rem; height: 24px; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; stroke: #fff4; fill: #fff2; transition: all .2s ease-in-out; }
+          .btn-wrapper .btn:hover .btn-svg { stroke: #fffa; fill: #fff3; }
+
+          .btn-wrapper .dot { position: absolute; width: var(--dot-size); aspect-ratio: 1; border-radius: 2px; background-color: var(--dot-color); transition: all .3s ease-in-out; opacity: 0; }
+          .btn-wrapper:has(.btn:hover) .dot.top.left { top: 50%; left: 20%; animation: move-top-left var(--animation-speed) ease-in-out forwards; }
+          @keyframes move-top-left { 90% { opacity: .6; } 100% { top: calc(var(--dot-size) * -0.5); left: calc(var(--dot-size) * -0.5); opacity: 1; } }
+          .btn-wrapper:has(.btn:hover) .dot.top.right { top: 50%; right: 20%; animation: move-top-right var(--animation-speed) ease-in-out forwards; animation-delay: calc(var(--animation-speed)*.6); }
+          @keyframes move-top-right { 80% { opacity: .6; } 100% { top: calc(var(--dot-size) * -0.5); right: calc(var(--dot-size) * -0.5); opacity: 1; } }
+          .btn-wrapper:has(.btn:hover) .dot.bottom.right { bottom: 50%; right: 20%; animation: move-bottom-right var(--animation-speed) ease-in-out forwards; animation-delay: calc(var(--animation-speed)*1.2); }
+          @keyframes move-bottom-right { 80% { opacity: .6; } 100% { bottom: calc(var(--dot-size) * -0.5); right: calc(var(--dot-size) * -0.5); opacity: 1; } }
+          .btn-wrapper:has(.btn:hover) .dot.bottom.left { bottom: 50%; left: 20%; animation: move-bottom-left var(--animation-speed) ease-in-out forwards; animation-delay: calc(var(--animation-speed)*1.8); }
+          @keyframes move-bottom-left { 80% { opacity: .6; } 100% { bottom: calc(var(--dot-size) * -0.5); left: calc(var(--dot-size) * -0.5); opacity: 1; } }
+
+          .btn-wrapper .line { position: absolute; transition: all .3s ease-in-out; }
+          .btn-wrapper .line.horizontal { height: var(--line-weight); width: 100%; background-image: repeating-linear-gradient(90deg, #0000 0 calc(var(--line-weight)*2), var(--line-color) calc(var(--line-weight)*2) calc(var(--line-weight)*4)); }
+          .btn-wrapper .line.top { top: calc(var(--line-weight)*-0.5); transform-origin: top left; transform: rotate(5deg) scaleX(0); }
+          .btn-wrapper:has(.btn:hover) .line.top { animation: draw-top var(--animation-speed) ease-in-out forwards; animation-delay: calc(var(--animation-speed)*.8); }
+          @keyframes draw-top { 100% { transform: rotate(0deg) scaleX(1); } }
+          .btn-wrapper .line.bottom { bottom: calc(var(--line-weight)*-0.5); transform-origin: bottom right; transform: rotate(5deg) scaleX(0); }
+          .btn-wrapper:has(.btn:hover) .line.bottom { animation: draw-bottom var(--animation-speed) ease-in-out forwards; animation-delay: calc(var(--animation-speed)*2); }
+          @keyframes draw-bottom { 100% { transform: rotate(0deg) scaleX(1); } }
+          .btn-wrapper .line.vertical { width: var(--line-weight); height: 100%; background-image: repeating-linear-gradient(0deg, #0000 0 calc(var(--line-weight)*2), var(--line-color) calc(var(--line-weight)*2) calc(var(--line-weight)*4)); }
+          .btn-wrapper .line.left { left: calc(var(--line-weight)*-0.5); transform-origin: bottom left; transform: rotate(0deg) scaleY(0); }
+          .btn-wrapper:has(.btn:hover) .line.left { animation: draw-left var(--animation-speed) ease-in-out forwards; animation-delay: calc(var(--animation-speed)*2.4); }
+          @keyframes draw-left { 100% { transform: rotate(0deg) scaleY(1); } }
+          .btn-wrapper .line.right { right: calc(var(--line-weight)*-0.5); transform-origin: top right; transform: rotate(5deg) scaleY(0); }
+          .btn-wrapper:has(.btn:hover) .line.right { animation: draw-right var(--animation-speed) ease-in-out forwards; animation-delay: calc(var(--animation-speed)*1.4); }
+          @keyframes draw-right { 100% { transform: rotate(0deg) scaleY(1); } }
+        </style>
+
+        <div class="line horizontal top"></div>
+        <div class="line vertical right"></div>
+        <div class="line horizontal bottom"></div>
+        <div class="line vertical left"></div>
+
+        <div class="dot top left"></div>
+        <div class="dot top right"></div>
+        <div class="dot bottom right"></div>
+        <div class="dot bottom left"></div>
+
+        <button class="btn bg-[#ffffff]">
+          <span class="btn-text">Start Creating</span>
+          <svg class="btn-svg" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17.6744 11.4075L15.7691 17.1233C15.7072 17.309 15.5586 17.4529 15.3709 17.5087L3.69348 20.9803C3.22819 21.1186 2.79978 20.676 2.95328 20.2155L6.74467 8.84131C6.79981 8.67588 6.92419 8.54263 7.08543 8.47624L12.472 6.25822C12.696 6.166 12.9535 6.21749 13.1248 6.38876L17.5294 10.7935C17.6901 10.9542 17.7463 11.1919 17.6744 11.4075Z"></path>
+            <path d="M3.2959 20.6016L9.65986 14.2376"></path>
+            <path d="M17.7917 11.0557L20.6202 8.22724C21.4012 7.44619 21.4012 6.17986 20.6202 5.39881L18.4989 3.27749C17.7178 2.49645 16.4515 2.49645 15.6704 3.27749L12.842 6.10592"></path>
+            <path d="M11.7814 12.1163C11.1956 11.5305 10.2458 11.5305 9.66004 12.1163C9.07426 12.7021 9.07426 13.6519 9.66004 14.2376C10.2458 14.8234 11.1956 14.8234 11.7814 14.2376C12.3671 13.6519 12.3671 12.7021 11.7814 12.1163Z"></path>
+          </svg>
+        </button>
+      </a>
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+const DOT_BORDER_BUTTON_DEFINITION: EffectDefinition = {
+  title: "Dot Border button",
+  source: DOT_BORDER_BUTTON_SOURCE,
+  background: "#111318",
+  theme: { lightBackground: "#f4f7fb", darkBackground: "#111318" },
+  targets: [
+    { selector: ".component-wrapper .btn-wrapper", role: "button", preserveTransform: true },
+  ],
+};
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function effectBackground(definition: EffectDefinition, mode: EffectMode) {
+  return definition.theme?.[`${mode}Background`] ?? definition.background;
+}
+
+function buildFocusedDocument(definition: EffectDefinition, mode: EffectMode) {
+  const background = effectBackground(definition, mode);
+  const targetJson = JSON.stringify(definition.targets).replace(/</g, "\\u003c");
+  const modeJson = JSON.stringify(mode);
+  const focusStyle = `<style data-threeui-focus>
+html, body { width: 100% !important; height: 100% !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; overflow: hidden !important; background: ${background} !important; color-scheme: ${mode} !important; }
+body { position: relative !important; display: flex !important; align-items: center !important; justify-content: center !important; }
+body > * { visibility: hidden !important; }
+body[data-threeui-ready] > [data-threeui-role] { visibility: visible !important; }
+[data-threeui-residual] { display: none !important; }
+[data-threeui-role="button"] { position: relative !important; z-index: 2 !important; opacity: 1 !important; flex: none !important; }
+[data-threeui-role="button"]:not([data-threeui-preserve-transform]) { transform: none !important; }
+</style>`;
+  const focusScript = `<script data-threeui-focus>
+(function () {
+  document.documentElement.dataset.sfMode = ${modeJson};
+  var isolated = false;
+  function isolate() {
+    if (isolated) return;
+    var specs = ${targetJson};
+    var roots = [];
+    specs.forEach(function (spec) {
+      var element = document.querySelector(spec.selector);
+      if (!element) return;
+      element.setAttribute('data-threeui-role', spec.role);
+      if (spec.preserveTransform) element.setAttribute('data-threeui-preserve-transform', '');
+      if (!roots.some(function (root) { return root.contains(element); })) roots.push(element);
+    });
+    if (!roots.length) return;
+    isolated = true;
+    roots.forEach(function (root) {
+      var placeholderLink = root.matches('a[href="#"]') ? root : root.querySelector('a[href="#"]');
+      if (placeholderLink) placeholderLink.addEventListener('click', function (event) { event.preventDefault(); });
+      document.body.appendChild(root);
+    });
+    Array.from(document.body.children).forEach(function (element) {
+      if (roots.indexOf(element) !== -1) return;
+      element.setAttribute('data-threeui-residual', '');
+      element.setAttribute('aria-hidden', 'true');
+      if ('inert' in element) element.inert = true;
+    });
+    document.body.setAttribute('data-threeui-ready', '');
+    requestAnimationFrame(function () { window.dispatchEvent(new Event('resize')); });
+  }
+  function scheduleIsolation() { setTimeout(isolate, 100); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleIsolation, { once: true });
+  else scheduleIsolation();
+  window.addEventListener('load', isolate, { once: true });
+})();
+</script>`;
+  return definition.source
+    .replace(/<\/head>/i, `${focusStyle}</head>`)
+    .replace(/<\/body>/i, `${focusScript}</body>`);
+}
+
+function NeuformIsolatedEffect({
+  definition,
+  mode = DOT_BORDER_BUTTON_DEFAULTS.mode,
+  hue = DOT_BORDER_BUTTON_DEFAULTS.hue,
+  saturation = DOT_BORDER_BUTTON_DEFAULTS.saturation,
+  brightness = DOT_BORDER_BUTTON_DEFAULTS.brightness,
+  className,
+  style,
+}: DotBorderButtonProps & { definition: EffectDefinition }) {
+  const safeMode: EffectMode = mode === "light" ? "light" : "dark";
+  const background = effectBackground(definition, safeMode);
+  const source = useMemo(() => buildFocusedDocument(definition, safeMode), [definition, safeMode]);
+  const safeHue = clamp(hue, -180, 180);
+  const safeSaturation = clamp(saturation, 0, 2);
+  const safeBrightness = clamp(brightness, 0.35, 1.65);
+  const filter =
+    safeHue === 0 && safeSaturation === 1 && safeBrightness === 1
+      ? undefined
+      : `hue-rotate(${safeHue}deg) saturate(${safeSaturation}) brightness(${safeBrightness})`;
+
+  return (
+    <iframe
+      className={className}
+      data-mode={safeMode}
+      title={definition.title}
+      srcDoc={source}
+      sandbox="allow-scripts"
+      loading="eager"
+      style={{ display: "block", width: "100%", height: "100%", border: 0, background, filter, ...style }}
+    />
+  );
+}
+
+function DotBorderButton(props: DotBorderButtonProps) {
+  return <NeuformIsolatedEffect {...props} definition={DOT_BORDER_BUTTON_DEFINITION} />;
+}
+
+export default DotBorderButton;
+```
+
+**Demo usage:**
+```tsx
+import DotBorderButton from "@/components/ui/dot-border-button";
+
+export default function DotBorderButtonDemo() {
+  return (
+    <div className="flex h-[420px] w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-[#111318]">
+      <DotBorderButton mode="dark" className="h-full w-full" />
+    </div>
+  );
+}
+```
+
+---
+
+## macOS Dock
+- **Category**: navigation dock / app launcher — desktop-OS-style UI chrome
+- **Stack**: React, TypeScript, inline styles (no Tailwind, no CSS-in-JS library) — pure `requestAnimationFrame`-driven imperative animation, no `framer-motion`/`motion` dependency at all
+- **Deps**: none required. Has an **optional** runtime check for a global `window.gsap` (`if (typeof window !== 'undefined' && (window as any).gsap)`) to use GSAP's bounce animation on click if GSAP happens to already be loaded on the page; if it's not present, it gracefully falls back to a manual CSS-transition bounce (`createBounceAnimation`) — so unlike the CDN-injection components flagged elsewhere in this stash, this one doesn't load anything itself, it just opportunistically uses GSAP if the project already has it. Nothing to install unless GSAP-quality bounce easing is specifically wanted, in which case add `gsap` as areal dependency and import it directly rather than relying on a global.
+- **Summary**: A pixel-accurate recreation of macOS's Dock magnification effect — icons scale up in a smooth cosine falloff curve as the cursor approaches (authentic to Apple's actual algorithm, not just a generic hover-scale), with neighboring icons scaling proportionally less the further they are from the cursor, and everything lerped frame-by-frame via `requestAnimationFrame` for buttery interpolation rather than CSS transitions on hover. Responsive: recalculates icon size/max-scale/effect-radius based on viewport size (distinct tuned configs for phone/tablet/small-laptop/desktop breakpoints) rather than fixed Tailwind breakpoints. Includes running-app indicator dots and a translucent frosted-glass dock background with layered box-shadows for depth.
+- **Notes**: The demo's icon URLs point at 21st.dev's own asset CDN (`cdn.21st.dev/assets/mirror/...`) — these are 21st.dev's hosted mirror of macOS system icons for demo purposes, not something to keep pointing at in a real project (that CDN's availability/uptime isn't guaranteed for external use, and reusing macOS's actual app icons in a shipped product raises the same trademark/likeness consideration as the Floating Icons Hero's brand logos — macOS's Finder/Safari/etc. icons are Apple's IP). Swap in the user's own app icons/images before using this for anything beyond a demo or portfolio piece imitating macOS. The click bounce and magnification math both use fairly involved manual physics (cosine falloff, lerp factors, throttled mousemove at ~60fps) — this is a case where the "adapt, don't just paste" step mostly means retheming the dock's colors/blur/shadow to match the project rather than touching the animation math, which is already well-tuned; avoid "simplifying" the cosine calculation, it's what makes the effect feel authentic rather than like a generic hover-scale.
+
+```tsx
+'use client';
+
+import React, { useState, useRef, useCallback, useEffect } from 'react';
+
+interface DockApp {
+  id: string;
+  name: string;
+  icon: string;
+}
+
+interface MacOSDockProps {
+  apps: DockApp[];
+  onAppClick: (appId: string) => void;
+  openApps?: string[];
+  className?: string;
+}
+
+const MacOSDock: React.FC<MacOSDockProps> = ({ 
+  apps, 
+  onAppClick, 
+  openApps = [],
+  className = ''
+}) => {
+  const [mouseX, setMouseX] = useState<number | null>(null);
+  const [currentScales, setCurrentScales] = useState<number[]>(apps.map(() => 1));
+  const [currentPositions, setCurrentPositions] = useState<number[]>([]);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const iconRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const animationFrameRef = useRef<number | undefined>(undefined);
+  const lastMouseMoveTime = useRef<number>(0);
+
+  const getResponsiveConfig = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return { baseIconSize: 64, maxScale: 1.6, effectWidth: 240 };
+    }
+
+    const smallerDimension = Math.min(window.innerWidth, window.innerHeight);
+    
+    if (smallerDimension < 480) {
+      return {
+        baseIconSize: Math.max(40, smallerDimension * 0.08),
+        maxScale: 1.4,
+        effectWidth: smallerDimension * 0.4
+      };
+    } else if (smallerDimension < 768) {
+      return {
+        baseIconSize: Math.max(48, smallerDimension * 0.07),
+        maxScale: 1.5,
+        effectWidth: smallerDimension * 0.35
+      };
+    } else if (smallerDimension < 1024) {
+      return {
+        baseIconSize: Math.max(56, smallerDimension * 0.06),
+        maxScale: 1.6,
+        effectWidth: smallerDimension * 0.3
+      };
+    } else {
+      return {
+        baseIconSize: Math.max(64, Math.min(80, smallerDimension * 0.05)),
+        maxScale: 1.8,
+        effectWidth: 300
+      };
+    }
+  }, []);
+
+  const [config, setConfig] = useState(getResponsiveConfig);
+  const { baseIconSize, maxScale, effectWidth } = config;
+  const minScale = 1.0;
+  const baseSpacing = Math.max(4, baseIconSize * 0.08);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setConfig(getResponsiveConfig());
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [getResponsiveConfig]);
+
+  const calculateTargetMagnification = useCallback((mousePosition: number | null) => {
+    if (mousePosition === null) {
+      return apps.map(() => minScale);
+    }
+
+    return apps.map((_, index) => {
+      const normalIconCenter = (index * (baseIconSize + baseSpacing)) + (baseIconSize / 2);
+      const minX = mousePosition - (effectWidth / 2);
+      const maxX = mousePosition + (effectWidth / 2);
+      
+      if (normalIconCenter < minX || normalIconCenter > maxX) {
+        return minScale;
+      }
+      
+      const theta = ((normalIconCenter - minX) / effectWidth) * 2 * Math.PI;
+      const cappedTheta = Math.min(Math.max(theta, 0), 2 * Math.PI);
+      const scaleFactor = (1 - Math.cos(cappedTheta)) / 2;
+      
+      return minScale + (scaleFactor * (maxScale - minScale));
+    });
+  }, [apps, baseIconSize, baseSpacing, effectWidth, maxScale, minScale]);
+
+  const calculatePositions = useCallback((scales: number[]) => {
+    let currentX = 0;
+    
+    return scales.map((scale) => {
+      const scaledWidth = baseIconSize * scale;
+      const centerX = currentX + (scaledWidth / 2);
+      currentX += scaledWidth + baseSpacing;
+      return centerX;
+    });
+  }, [baseIconSize, baseSpacing]);
+
+  useEffect(() => {
+    const initialScales = apps.map(() => minScale);
+    const initialPositions = calculatePositions(initialScales);
+    setCurrentScales(initialScales);
+    setCurrentPositions(initialPositions);
+  }, [apps, calculatePositions, minScale, config]);
+
+  const animateToTarget = useCallback(() => {
+    const targetScales = calculateTargetMagnification(mouseX);
+    const targetPositions = calculatePositions(targetScales);
+    const lerpFactor = mouseX !== null ? 0.2 : 0.12;
+
+    setCurrentScales(prevScales => {
+      return prevScales.map((currentScale, index) => {
+        const diff = targetScales[index] - currentScale;
+        return currentScale + (diff * lerpFactor);
+      });
+    });
+
+    setCurrentPositions(prevPositions => {
+      return prevPositions.map((currentPos, index) => {
+        const diff = targetPositions[index] - currentPos;
+        return currentPos + (diff * lerpFactor);
+      });
+    });
+
+    const scalesNeedUpdate = currentScales.some((scale, index) => 
+      Math.abs(scale - targetScales[index]) > 0.002
+    );
+    const positionsNeedUpdate = currentPositions.some((pos, index) => 
+      Math.abs(pos - targetPositions[index]) > 0.1
+    );
+    
+    if (scalesNeedUpdate || positionsNeedUpdate || mouseX !== null) {
+      animationFrameRef.current = requestAnimationFrame(animateToTarget);
+    }
+  }, [mouseX, calculateTargetMagnification, calculatePositions, currentScales, currentPositions]);
+
+  useEffect(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+    }
+    animationFrameRef.current = requestAnimationFrame(animateToTarget);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [animateToTarget]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const now = performance.now();
+    
+    if (now - lastMouseMoveTime.current < 16) {
+      return;
+    }
+    
+    lastMouseMoveTime.current = now;
+    
+    if (dockRef.current) {
+      const rect = dockRef.current.getBoundingClientRect();
+      const padding = Math.max(8, baseIconSize * 0.12);
+      setMouseX(e.clientX - rect.left - padding);
+    }
+  }, [baseIconSize]);
+
+  const handleMouseLeave = useCallback(() => {
+    setMouseX(null);
+  }, []);
+
+  const createBounceAnimation = (element: HTMLElement) => {
+    const bounceHeight = Math.max(-8, -baseIconSize * 0.15);
+    element.style.transition = 'transform 0.2s ease-out';
+    element.style.transform = `translateY(${bounceHeight}px)`;
+    
+    setTimeout(() => {
+      element.style.transform = 'translateY(0px)';
+    }, 200);
+  };
+
+  const handleAppClick = (appId: string, index: number) => {
+    if (iconRefs.current[index]) {
+      if (typeof window !== 'undefined' && (window as any).gsap) {
+        const gsap = (window as any).gsap;
+        const bounceHeight = currentScales[index] > 1.3 ? -baseIconSize * 0.2 : -baseIconSize * 0.15;
+        
+        gsap.to(iconRefs.current[index], {
+          y: bounceHeight,
+          duration: 0.2,
+          ease: 'power2.out',
+          yoyo: true,
+          repeat: 1,
+          transformOrigin: 'bottom center'
+        });
+      } else {
+        createBounceAnimation(iconRefs.current[index]!);
+      }
+    }
+    
+    onAppClick(appId);
+  };
+
+  const contentWidth = currentPositions.length > 0 
+    ? Math.max(...currentPositions.map((pos, index) => 
+        pos + (baseIconSize * currentScales[index]) / 2
+      ))
+    : (apps.length * (baseIconSize + baseSpacing)) - baseSpacing;
+
+  const padding = Math.max(8, baseIconSize * 0.12);
+
+    return (
+    <div 
+      ref={dockRef}
+      className={`backdrop-blur-md ${className}`}
+      style={{
+        width: `${contentWidth + padding * 2}px`,
+        background: 'rgba(45, 45, 45, 0.75)',
+        borderRadius: `${Math.max(12, baseIconSize * 0.4)}px`,
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        boxShadow: `
+          0 ${Math.max(4, baseIconSize * 0.1)}px ${Math.max(16, baseIconSize * 0.4)}px rgba(0, 0, 0, 0.4),
+          0 ${Math.max(2, baseIconSize * 0.05)}px ${Math.max(8, baseIconSize * 0.2)}px rgba(0, 0, 0, 0.3),
+          inset 0 1px 0 rgba(255, 255, 255, 0.15),
+          inset 0 -1px 0 rgba(0, 0, 0, 0.2)
+        `,
+        padding: `${padding}px`
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div 
+        className="relative"
+        style={{
+          height: `${baseIconSize}px`,
+          width: '100%'
+        }}
+      >
+        {apps.map((app, index) => {
+          const scale = currentScales[index];
+          const position = currentPositions[index] || 0;
+          const scaledSize = baseIconSize * scale;
+          
+          return (
+            <div
+              key={app.id}
+              ref={(el) => { iconRefs.current[index] = el; }}
+              className="absolute cursor-pointer flex flex-col items-center justify-end"
+              title={app.name}
+              onClick={() => handleAppClick(app.id, index)}
+              style={{
+                left: `${position - scaledSize / 2}px`,
+                bottom: '0px',
+                width: `${scaledSize}px`,
+                height: `${scaledSize}px`,
+                transformOrigin: 'bottom center',
+                zIndex: Math.round(scale * 10)
+              }}
+            >
+              <img
+                src={app.icon}
+                alt={app.name}
+                width={scaledSize}
+                height={scaledSize}
+                className="object-contain"
+                style={{
+                  filter: `drop-shadow(0 ${scale > 1.2 ? Math.max(2, baseIconSize * 0.05) : Math.max(1, baseIconSize * 0.03)}px ${scale > 1.2 ? Math.max(4, baseIconSize * 0.1) : Math.max(2, baseIconSize * 0.06)}px rgba(0,0,0,${0.2 + (scale - 1) * 0.15}))`
+                }}
+              />
+              
+              {openApps.includes(app.id) && (
+                <div 
+                  className="absolute"
+                  style={{
+                    bottom: `${Math.max(-2, -baseIconSize * 0.05)}px`,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: `${Math.max(3, baseIconSize * 0.06)}px`,
+                    height: `${Math.max(3, baseIconSize * 0.06)}px`,
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    boxShadow: '0 0 4px rgba(0, 0, 0, 0.3)',
+                  }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default MacOSDock;
+```
+
+**Demo usage** (⚠️ icon URLs point at 21st.dev's demo asset CDN and depict real macOS app icons — swap for the user's own images before shipping):
+
+```tsx
+import React, { useState } from 'react';
+import MacOSDock from './components/ui/mac-os-dock.tsx';
+
+const sampleApps = [
+  { id: 'finder', name: 'Finder', icon: '/* project's own icon path */' },
+  { id: 'calculator', name: 'Calculator', icon: '/* project's own icon path */' },
+  { id: 'terminal', name: 'Terminal', icon: '/* project's own icon path */' },
+  // ...remaining apps follow the same { id, name, icon } shape
+];
+
+const DockDemo: React.FC = () => {
+  const [openApps, setOpenApps] = useState<string[]>(['finder', 'safari']);
+
+  const handleAppClick = (appId: string) => {
+    setOpenApps(prev => 
+      prev.includes(appId) 
+        ? prev.filter(id => id !== appId)
+        : [...prev, appId]
+    );
+  };
+
+  return (
+    <div style={{ height: '100vh', width: '100vw', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <MacOSDock apps={sampleApps} onAppClick={handleAppClick} openApps={openApps} />
+    </div>
+  );
+};
+
+export default DockDemo;
+```
+
+---
+
+## Sticky Scroll Gallery
+- **Category**: image gallery / scroll-driven layout — landing/portfolio section
+- **Stack**: React, TypeScript, Tailwind, `lenis/react` (`ReactLenis`) for smooth-scroll — no other animation library, the visual effect is pure CSS `sticky` positioning, not JS-driven scroll animation
+- **Deps**: `lenis` (the `ReactLenis` wrapper from the `lenis/react` subpath) — this replaces the browser's native scroll with Lenis's smoothed/eased scroll for the whole page (`root` prop), which is a global effect, not scoped to just this section
+- **Summary**: A three-column image gallery where the center column is `sticky top-0 h-screen` while the left and right columns scroll normally — as the page scrolls, the two outer columns appear to slide past the fixed center column, creating a parallax-like "gallery wall" effect using nothing but CSS sticky positioning (no scroll-linked JS calculations). Preceded by a full-screen hero with a radial-masked dot-grid background and centered headline, and followed by a large uppercase gradient-text footer wordmark ("ui-layout" in the original — swap for the project's own name/logo).
+- **Notes**: `<ReactLenis root>` swaps the smooth-scroll behavior for the **entire page**, not just this section — if the project already uses Lenis elsewhere, don't wrap it a second time (only one `root` Lenis instance should exist per page); if it doesn't, mounting this component will change scroll feel sitewide, which is worth confirming with the user is wanted rather than assuming. All 11 image URLs point at 21st.dev's demo asset CDN (`cdn.21st.dev/assets/mirror/...`) — swap for the user's own gallery images before using this beyond a demo (same caveat as the macOS Dock's icon URLs: that CDN mirror isn't meant for external production use). The center column is hardcoded to exactly 3 images filling a `grid-rows-3` — if the user wants a different image count in the sticky column, that grid needs adjusting, it won't auto-flow. The footer wordmark literally says "ui-layout" (likely because this was itself sourced from the ui-layouts.com library, already in `references/libraries.md`) — that needs to be swapped to the project's own brand name, not left as attribution to the source library.
+
+```tsx
+'use client';
+import { ReactLenis } from 'lenis/react';
+import React, { forwardRef } from 'react';
+
+const Component = forwardRef<HTMLElement>((props, ref) => {
+  return (
+    <ReactLenis root>
+      <main className='bg-black' ref={ref}>
+        <div className='wrapper'>
+          <section className='text-white  h-screen  w-full bg-slate-950  grid place-content-center sticky top-0'>
+            <div className='absolute bottom-0 left-0 right-0 top-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:54px_54px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]'></div>
+
+            <h1 className='2xl:text-7xl text-5xl px-8 font-semibold text-center tracking-tight leading-[120%]'>
+              Create Gallery In a Better Way
+              <br />
+              Using CSS sticky properties <br />
+              Scroll down! 👇
+            </h1>
+          </section>
+        </div>
+
+        <section className='text-white   w-full bg-slate-950  '>
+          <div className='grid grid-cols-12 gap-2'>
+            <div className='grid gap-2 col-span-4'>
+              <figure className=' w-full'>
+                <img src='/* project image 1 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className=' w-full'>
+                <img src='/* project image 2 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className=' w-full'>
+                <img src='/* project image 3 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className='w-full'>
+                <img src='/* project image 4 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className='w-full'>
+                <img src='/* project image 5 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+            </div>
+            <div className='sticky top-0 h-screen w-full col-span-4 gap-2  grid grid-rows-3'>
+              <figure className='w-full h-full '>
+                <img src='/* sticky column image 1 */' alt='' className='transition-all duration-300 h-full w-full align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className='w-full h-full '>
+                <img src='/* sticky column image 2 */' alt='' className='transition-all duration-300 h-full w-full align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className='w-full h-full '>
+                <img src='/* sticky column image 3 */' alt='' className='transition-all duration-300 h-full w-full align-bottom object-cover rounded-md' />
+              </figure>
+            </div>
+            <div className='grid gap-2 col-span-4'>
+              <figure className='w-full'>
+                <img src='/* project image 6 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className='w-full'>
+                <img src='/* project image 7 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className='w-full'>
+                <img src='/* project image 8 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className='w-full'>
+                <img src='/* project image 9 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+              <figure className='w-full'>
+                <img src='/* project image 10 */' alt='' className='transition-all duration-300 w-full h-96 align-bottom object-cover rounded-md' />
+              </figure>
+            </div>
+          </div>
+        </section>
+
+        <footer className='group bg-slate-950 '>
+          <h1 className='text-[16vw]  translate-y-20 leading-[100%] uppercase font-semibold text-center bg-gradient-to-r from-gray-400 to-gray-800 bg-clip-text text-transparent transition-all ease-linear'>
+            {/* swap this wordmark for the project's own name/logo */}
+            your-brand
+          </h1>
+          <div className='bg-black h-40 relative z-10 grid place-content-center text-2xl rounded-tr-full rounded-tl-full'></div>
+        </footer>
+      </main>
+    </ReactLenis>
+  );
+});
+
+Component.displayName = 'Component';
+
+export default Component;
+```
+
+**Demo usage:**
+```tsx
+import React from 'react';
+import Component from '@/components/ui/sticky-scroll';
+
+function ComponentDemo() {
+  return (
+    <Component />
+  );
+}
+
+export { ComponentDemo as DemoOne };
+```
+
+---
+
+## CoverFlow Carousel
+- **Category**: carousel / product-menu showcase — Apple-CoverFlow-style 3D card carousel
+- **Stack**: React, TypeScript, plain inline styles (no Tailwind for the card visuals, though the outer section uses a couple Tailwind utility classes) — zero external dependencies, including icons: the chevrons/arrow are hand-written inline SVG components rather than imported from `lucide-react` or any icon set
+- **Deps**: none — fully self-contained
+- **Summary**: A 3D "CoverFlow"-style carousel (à la old iTunes/iPod) showing 5 cards in view at once: a large centered active card plus two fading, scaled-down, rotated cards receding on each side via `rotateY`/`scale`/`translateX` transforms and a CSS `perspective`. Includes autoplay (pausable on hover), keyboard arrow navigation, touch swipe support, click-to-jump on any visible side card, pagination dots, and a blurred/darkened ambient background image derived from the current slide. Content overlay (tag, two-line title, description, CTA button) only fades in on the center card. Ships with a restaurant/menu-themed default dataset (`defaultDishes`) but is fully data-driven via the `items` prop and a `CarouselItem` type — swapping content is just passing a different `items` array, no need to touch the carousel logic itself.
+- **Notes**: All 5 default image URLs point at 21st.dev's demo asset CDN (`cdn.21st.dev/assets/mirror/...`) — same caveat as other stashed components sourced from 21st.dev demos: swap for the user's own images before shipping, don't rely on that CDN mirror staying available. The 3D transform offsets (`translateX(285px)`, `rotateY(-24deg)`, etc.) are hardcoded pixel/degree values tuned for the fixed `330px`-wide card — if the card size changes, these offsets need to scale proportionally too, they won't auto-adjust (no responsive/container-query logic here, unlike e.g. the macOS Dock's viewport-aware sizing). Only shows 5 cards total (center + 2 each side) regardless of how many items are in the array — with more than 5 items the rest are present in the DOM but fully hidden (`opacity: 0`) until navigated to, which is fine functionally but worth knowing if the user expects to see more cards peeking at once. Default autoplay interval is 5000ms — adjust `autoplayDelay` prop as needed. Because there's no dependency on lucide-react or Tailwind for the card internals, this integrates cleanly into non-Tailwind or non-shadcn projects with minimal adaptation — one of the more portable stashed components.
+
+```tsx
+"use client";
+
+import React, { useState, useEffect, useCallback, useRef } from "react";
+
+const ChevronLeftIcon = () => (
+  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+  </svg>
+);
+
+const ChevronRightIcon = () => (
+  <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+  </svg>
+);
+
+const ArrowRightIcon = () => (
+  <svg width="13" height="13" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+  </svg>
+);
+
+export interface CarouselItem {
+  tag?: string;
+  titleLine1: string;
+  titleLine2?: string;
+  desc?: string;
+  img: string;
+  ctaText?: string;
+  ctaUrl?: string;
+}
+
+export interface CoverFlowCarouselProps {
+  items?: CarouselItem[];
+  sectionLabel?: string;
+  autoplay?: boolean;
+  autoplayDelay?: number;
+  className?: string;
+  onCtaClick?: (item: CarouselItem) => void;
+}
+
+export const defaultDishes: CarouselItem[] = [
+  {
+    tag: "#Signature",
+    titleLine1: "BUTTER CHICKEN",
+    titleLine2: "– DELHI HERITAGE",
+    desc: "Velvety roasted tomato and fenugreek gravy with tender charred chicken",
+    img: "/* project image */",
+    ctaText: "View Menu",
+    ctaUrl: "#",
+  },
+  {
+    tag: "#ChefSpecial",
+    titleLine1: "TANDOORI CHOPS",
+    titleLine2: "– SMOKED SPICE",
+    desc: "Grass-fed lamb chops charred in live charcoal tandoor with Kashmiri spices",
+    img: "/* project image */",
+    ctaText: "View Menu",
+    ctaUrl: "#",
+  },
+  {
+    tag: "#Vegetarian",
+    titleLine1: "PANEER TIKKA",
+    titleLine2: "– CLAY ROASTED",
+    desc: "Artisan cottage cheese marinated in spiced yogurt, bell peppers & saffron",
+    img: "/* project image */",
+    ctaText: "View Menu",
+    ctaUrl: "#",
+  },
+  {
+    tag: "#CoastalCatch",
+    titleLine1: "MALABAR PRAWNS",
+    titleLine2: "– COCONUT GRAVY",
+    desc: "Jumbo wild tiger prawns simmered in fragrant curry leaves and coconut milk",
+    img: "/* project image */",
+    ctaText: "View Menu",
+    ctaUrl: "#",
+  },
+  {
+    tag: "#ArtisanBake",
+    titleLine1: "TRUFFLE NAAN",
+    titleLine2: "– CHARCOAL OVEN",
+    desc: "Crispy puffed leavened bread brushed with pure ghee and black winter truffle",
+    img: "/* project image */",
+    ctaText: "View Menu",
+    ctaUrl: "#",
+  },
+];
+
+export function CoverFlowCarousel({
+  items = defaultDishes,
+  sectionLabel = "BEST SELLERS",
+  autoplay = true,
+  autoplayDelay = 5000,
+  className = "",
+  onCtaClick,
+}: CoverFlowCarouselProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const touchStartX = useRef(0);
+  const total = items.length;
+
+  const nextSlide = useCallback(() => {
+    setCurrentIndex((prev) => (prev + 1) % total);
+  }, [total]);
+
+  const prevSlide = useCallback(() => {
+    setCurrentIndex((prev) => (prev - 1 + total) % total);
+  }, [total]);
+
+  const goToSlide = (idx: number) => {
+    setCurrentIndex(idx % total);
+  };
+
+  useEffect(() => {
+    if (!autoplay || isHovered || total <= 1) return;
+    const interval = setInterval(nextSlide, autoplayDelay);
+    return () => clearInterval(interval);
+  }, [autoplay, autoplayDelay, isHovered, nextSlide, total]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") prevSlide();
+      if (e.key === "ArrowRight") nextSlide();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [nextSlide, prevSlide]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const diff = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(diff) > 45) {
+      if (diff < 0) nextSlide();
+      else prevSlide();
+    }
+  };
+
+  if (!items || items.length === 0) return null;
+
+  return (
+    <section
+      className={`relative w-full min-h-[760px] flex items-center justify-center overflow-hidden py-12 select-none ${className}`}
+      style={{
+        backgroundColor: "#0c0a09",
+        color: "#ffffff",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+        <img
+          src={items[currentIndex]?.img}
+          alt="ambience background"
+          style={{
+            width: "100%",
+            height: "100%",
+            objectFit: "cover",
+            filter: "brightness(0.22) blur(32px)",
+            transform: "scale(1.15)",
+            transition: "opacity 1000ms ease, filter 1000ms ease",
+          }}
+        />
+        <div
+          className="absolute inset-0"
+          style={{
+            background: "radial-gradient(circle at center, rgba(12,10,9,0.3) 0%, rgba(12,10,9,0.92) 100%)",
+          }}
+        />
+      </div>
+
+      <div className="relative w-full max-w-6xl mx-auto px-4 z-10 flex flex-col items-center">
+        {sectionLabel && (
+          <div className="flex items-center gap-3 mb-8">
+            <span style={{ width: "36px", height: "1px", background: "linear-gradient(90deg, transparent, #c5a880)" }} />
+            <h3
+              style={{
+                fontSize: "0.75rem",
+                fontWeight: 700,
+                letterSpacing: "0.3em",
+                textTransform: "uppercase",
+                color: "#c5a880",
+                margin: 0,
+              }}
+            >
+              {sectionLabel}
+            </h3>
+            <span style={{ width: "36px", height: "1px", background: "linear-gradient(90deg, #c5a880, transparent)" }} />
+          </div>
+        )}
+
+        <div
+          className="relative w-full h-[520px] flex justify-center items-center mb-8"
+          style={{ perspective: "1400px" }}
+        >
+          {items.map((item, idx) => {
+            const offset = (idx - currentIndex + total) % total;
+
+            let transform = "translateX(0px) scale(0.4) rotateY(0deg)";
+            let opacity = 0;
+            let zIndex = 0;
+            let filter = "brightness(0.4) blur(2px)";
+            let isCenter = false;
+
+            if (offset === 0) {
+              isCenter = true;
+              transform = "translateX(0px) scale(1) rotateY(0deg)";
+              opacity = 1;
+              zIndex = 30;
+              filter = "brightness(1)";
+            } else if (offset === 1) {
+              transform = "translateX(285px) scale(0.84) rotateY(-24deg)";
+              opacity = 0.65;
+              zIndex = 20;
+              filter = "brightness(0.75)";
+            } else if (offset === 2) {
+              transform = "translateX(510px) scale(0.68) rotateY(-38deg)";
+              opacity = 0.38;
+              zIndex = 10;
+              filter = "brightness(0.55) blur(1px)";
+            } else if (offset === total - 1) {
+              transform = "translateX(-285px) scale(0.84) rotateY(24deg)";
+              opacity = 0.65;
+              zIndex = 20;
+              filter = "brightness(0.75)";
+            } else if (offset === total - 2) {
+              transform = "translateX(-510px) scale(0.68) rotateY(38deg)";
+              opacity = 0.38;
+              zIndex = 10;
+              filter = "brightness(0.55) blur(1px)";
+            }
+
+            return (
+              <div
+                key={idx}
+                onClick={() => !isCenter && goToSlide(idx)}
+                style={{
+                  position: "absolute",
+                  width: "330px",
+                  height: "500px",
+                  borderRadius: "18px",
+                  overflow: "hidden",
+                  backgroundColor: "#171311",
+                  border: "1px solid rgba(255, 255, 255, 0.12)",
+                  transform,
+                  opacity,
+                  zIndex,
+                  filter,
+                  transformOrigin: "center center",
+                  transition: "all 800ms cubic-bezier(0.25, 1, 0.5, 1)",
+                  boxShadow: isCenter
+                    ? "0 25px 60px rgba(0,0,0,0.9), 0 0 35px rgba(197,168,128,0.25)"
+                    : "0 15px 35px rgba(0,0,0,0.5)",
+                  cursor: isCenter ? "default" : "pointer",
+                }}
+              >
+                <img
+                  src={item.img}
+                  alt={item.titleLine1}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+                />
+
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(180deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.1) 25%, rgba(0,0,0,0.68) 60%, rgba(0,0,0,0.96) 100%)",
+                    pointerEvents: "none",
+                    zIndex: 10,
+                  }}
+                />
+
+                <div
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    height: "100%",
+                    padding: "20px 18px 22px",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    textAlign: "center",
+                    zIndex: 20,
+                    opacity: isCenter ? 1 : 0,
+                    transform: isCenter ? "translateY(0px)" : "translateY(16px)",
+                    transition: "opacity 500ms ease, transform 500ms ease",
+                    pointerEvents: isCenter ? "auto" : "none",
+                  }}
+                >
+                  <div style={{ textAlign: "right", width: "100%", paddingRight: "4px" }}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        fontSize: "0.78rem",
+                        fontWeight: 600,
+                        letterSpacing: "0.06em",
+                        color: "rgba(255,255,255,0.9)",
+                        textShadow: "0 2px 6px rgba(0,0,0,0.8)",
+                      }}
+                    >
+                      {item.tag}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: "3px",
+                      marginTop: "auto",
+                      paddingBottom: "4px",
+                    }}
+                  >
+                    <h2
+                      style={{
+                        fontSize: "1.65rem",
+                        fontWeight: 900,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                        color: "#ffffff",
+                        margin: 0,
+                        lineHeight: 1.1,
+                        textShadow: "0 3px 12px rgba(0,0,0,0.95)",
+                      }}
+                    >
+                      {item.titleLine1}
+                    </h2>
+
+                    {item.titleLine2 && (
+                      <span
+                        style={{
+                          fontSize: "1.1rem",
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.06em",
+                          color: "#f3f0ea",
+                          lineHeight: 1.2,
+                          textShadow: "0 3px 10px rgba(0,0,0,0.9)",
+                        }}
+                      >
+                        {item.titleLine2}
+                      </span>
+                    )}
+
+                    <div
+                      style={{
+                        width: "34px",
+                        height: "2px",
+                        backgroundColor: "#c5a880",
+                        borderRadius: "2px",
+                        margin: "5px auto 4px",
+                        boxShadow: "0 0 8px rgba(197,168,128,0.7)",
+                      }}
+                    />
+
+                    {item.desc && (
+                      <p
+                        style={{
+                          fontSize: "0.82rem",
+                          fontStyle: "italic",
+                          color: "rgba(255,255,255,0.9)",
+                          maxWidth: "280px",
+                          margin: "0 0 10px",
+                          lineHeight: 1.3,
+                          textShadow: "0 2px 8px rgba(0,0,0,0.9)",
+                        }}
+                      >
+                        {item.desc}
+                      </p>
+                    )}
+
+                    <a
+                      href={item.ctaUrl || "#"}
+                      onClick={(e) => {
+                        if (onCtaClick) {
+                          e.preventDefault();
+                          onCtaClick(item);
+                        }
+                      }}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        padding: "7px 18px",
+                        borderRadius: "9999px",
+                        background: "linear-gradient(135deg, #c5a880 0%, #a48256 100%)",
+                        color: "#110d0c",
+                        fontSize: "0.72rem",
+                        fontWeight: 800,
+                        letterSpacing: "0.14em",
+                        textTransform: "uppercase",
+                        textDecoration: "none",
+                        boxShadow: "0 4px 14px rgba(0,0,0,0.4), 0 0 15px rgba(197,168,128,0.3)",
+                        cursor: "pointer",
+                        transition: "transform 200ms ease, box-shadow 200ms ease",
+                      }}
+                    >
+                      <span>{item.ctaText || "View Menu"}</span>
+                      <ArrowRightIcon />
+                    </a>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={prevSlide}
+          aria-label="Previous dish"
+          style={{
+            position: "absolute",
+            left: "24px",
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: "46px",
+            height: "46px",
+            borderRadius: "50%",
+            backgroundColor: "rgba(0,0,0,0.55)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            color: "#ffffff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(8px)",
+            cursor: "pointer",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            zIndex: 40,
+            transition: "all 200ms ease",
+          }}
+        >
+          <ChevronLeftIcon />
+        </button>
+
+        <button
+          onClick={nextSlide}
+          aria-label="Next dish"
+          style={{
+            position: "absolute",
+            right: "24px",
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: "46px",
+            height: "46px",
+            borderRadius: "50%",
+            backgroundColor: "rgba(0,0,0,0.55)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            color: "#ffffff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(8px)",
+            cursor: "pointer",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.4)",
+            zIndex: 40,
+            transition: "all 200ms ease",
+          }}
+        >
+          <ChevronRightIcon />
+        </button>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", zIndex: 30 }}>
+          {items.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => goToSlide(idx)}
+              aria-label={`Go to slide ${idx + 1}`}
+              style={{
+                height: "8px",
+                width: idx === currentIndex ? "28px" : "8px",
+                borderRadius: "9999px",
+                backgroundColor: idx === currentIndex ? "#c5a880" : "rgba(255,255,255,0.25)",
+                border: "none",
+                cursor: "pointer",
+                boxShadow: idx === currentIndex ? "0 0 10px rgba(197,168,128,0.7)" : "none",
+                transition: "all 300ms ease",
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export const Component = CoverFlowCarousel;
+export default CoverFlowCarousel;
+```
+
+---
+
+## Image Stream Hero
+- **Category**: hero background / decorative image corridor — pure-CSS 3D perspective effect
+- **Stack**: React, TypeScript, Tailwind (`cn()` util only) — the actual motion is pure CSS `@keyframes` computed once in JS and injected via a `<style>` tag; no animation library, no per-frame JS (the perspective/3D math runs once at render time to build the keyframe strings, not on every frame)
+- **Deps**: none beyond React + the project's `cn()` helper
+- **Summary**: A decorative "flying through a corridor of photos" hero background — two mirrored rails of image cards appear to rush from a vanishing point toward the viewer, using pure CSS 3D transforms (`perspective`, `translate3d`, `rotateY`) driven by keyframes that are mathematically derived (not eyeballed) so cards grow geometrically in apparent size as they approach, keeping the "ribbon" of cards visually continuous with no gaps or tears. Cards are born off-axis (negative `railBirth`) specifically so the center of the screen is never empty at any point in the loop — a deliberate fix for a specific visual artifact (a "hole" blinking open at center once per cycle) that's explained in the code's own extensive comments. Respects `prefers-reduced-motion` by pausing (not hiding) the animation, so it freezes as a complete, sensible-looking still frame instead of collapsing to the center. Fully responsive via container query units (`cqw`) throughout, so the whole corridor scales proportionally with its container rather than the viewport.
+- **Notes**: This is an unusually well-engineered piece — the source comments explain the geometry reasoning in detail (why depth is geometric not linear, why the rails "fan" open early, why cards are born off-axis) and are worth keeping intact if this is reused, since they explain *why* the numeric defaults are what they are (described as "fitted numerically against a reference recording," not arbitrary). Practical notes for use: (1) it's purely decorative/`aria-hidden` — pass real content via the `children` prop to overlay on top (headline, CTA, etc.), the corridor itself renders no text; (2) `images` array is cycled — fewer images than `cards` (default 9) just repeats them, so a handful of images is enough, no need for a huge unique set; (3) the extensive prop-level JSDoc comments in the original source (quoted inline on `CorridorPath` fields explaining what breaks if you change them, e.g. "Raising `exitHeight`, dropping `cards`, or pulling `railExit` in all push toward a visible tear near the frame edge") are genuinely load-bearing documentation — don't strip them out when adapting, they're the only place the geometry's failure modes are explained. No demo/usage file was included with this component — when using it, pass an `images` array of `{ src, alt? }` objects and wrap page content as `children`.
+
+```tsx
+"use client";
+
+import * as React from "react";
+import { cn } from "@/lib/utils";
+
+export type CorridorPath = {
+  /** Strength of the projection. Lower is a wider-angle, more dramatic rush. @default 30 */
+  perspective?: number;
+  /** Card width in world units. @default 18 */
+  cardWidth?: number;
+  /** Card height in world units. @default 25 */
+  cardHeight?: number;
+  /** Corner radius applied to each card. @default 0.4 */
+  cardRadius?: number;
+  /** On-screen card height at the waist, where a card is born. @default 2.6 */
+  birthHeight?: number;
+  /** On-screen card height as a card leaves the frame. @default 46 */
+  exitHeight?: number;
+  /**
+   * Lateral offset at birth. Negative starts the card across the axis so the
+   * centre never opens up. @default -11
+   */
+  railBirth?: number;
+  /** Lateral offset once the rails have finished opening. @default 44 */
+  railExit?: number;
+  /** How front-loaded the opening is. >1 opens early then holds. @default 3.3 */
+  fan?: number;
+  /** Y-rotation at birth, degrees. @default 6 */
+  turnBirth?: number;
+  /** Y-rotation at exit, degrees. @default 28 */
+  turnExit?: number;
+  /** Keyframe stops used to trace the curve. Raise only if motion looks faceted. @default 24 */
+  stops?: number;
+};
+
+const PATH: Required<CorridorPath> = {
+  perspective: 30,
+  cardWidth: 18,
+  cardHeight: 25,
+  cardRadius: 0.4,
+  birthHeight: 2.6,
+  exitHeight: 46,
+  railBirth: -11,
+  railExit: 44,
+  fan: 3.3,
+  turnBirth: 6,
+  turnExit: 28,
+  stops: 24,
+};
+
+/** Sample the path once so the CSS keyframes trace the real curve. */
+function keyframes(dir: 1 | -1, name: string, p: Required<CorridorPath>) {
+  const steps: string[] = [];
+  for (let s = 0; s <= p.stops; s++) {
+    const u = s / p.stops;
+    const scale =
+      (p.birthHeight / p.cardHeight) *
+      Math.pow(p.exitHeight / p.birthHeight, u);
+    const z = p.perspective * (1 - 1 / scale);
+    const rail =
+      p.railExit - (p.railExit - p.railBirth) * Math.pow(1 - u, p.fan);
+    const turn = p.turnBirth + (p.turnExit - p.turnBirth) * u;
+    steps.push(
+      `${(u * 100).toFixed(2)}%{transform:translate3d(${(dir * rail).toFixed(
+        2,
+      )}cqw,0,${z.toFixed(2)}cqw) rotateY(${(-dir * turn).toFixed(2)}deg)}`,
+    );
+  }
+  return `@keyframes ${name}{${steps.join("")}}`;
+}
+
+export type StreamImage = {
+  src: string;
+  alt?: string;
+};
+
+export type ImageStreamHeroProps = {
+  images: StreamImage[];
+  /** @default 9 */
+  cards?: number;
+  /** @default 18 */
+  speed?: number;
+  /** @default 55 */
+  axis?: number;
+  path?: CorridorPath;
+  children?: React.ReactNode;
+  className?: string;
+};
+
+export function ImageStreamHero({
+  images,
+  cards = 9,
+  speed = 18,
+  axis = 55,
+  path,
+  children,
+  className,
+  ...props
+}: React.ComponentProps<"div"> & ImageStreamHeroProps) {
+  const id = React.useId().replace(/[^a-zA-Z0-9]/g, "");
+  const right = `ish-r-${id}`;
+  const left = `ish-l-${id}`;
+  const card = `ish-c-${id}`;
+
+  const p = React.useMemo(() => ({ ...PATH, ...path }), [path]);
+
+  const css = React.useMemo(
+    () =>
+      `${keyframes(1, right, p)}${keyframes(-1, left, p)}` +
+      `@media(prefers-reduced-motion:reduce){.${card}{animation-play-state:paused}}`,
+    [right, left, card, p],
+  );
+
+  return (
+    <div
+      className={cn("relative overflow-hidden", className)}
+      {...props}
+      style={{ containerType: "inline-size", ...props.style }}
+    >
+      <style>{css}</style>
+
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          perspective: `${p.perspective}cqw`,
+          perspectiveOrigin: `50% ${axis}%`,
+        }}
+      >
+        <div
+          className="absolute inset-0"
+          style={{ transformStyle: "preserve-3d" }}
+        >
+          {[right, left].map((name) =>
+            Array.from({ length: cards }, (_, i) => {
+              const img = images[i % Math.max(images.length, 1)];
+              return (
+                <div
+                  key={`${name}-${i}`}
+                  className={cn(card, "absolute overflow-hidden")}
+                  style={{
+                    left: "50%",
+                    top: `${axis}%`,
+                    width: `${p.cardWidth}cqw`,
+                    height: `${p.cardHeight}cqw`,
+                    marginLeft: `${-p.cardWidth / 2}cqw`,
+                    marginTop: `${-p.cardHeight / 2}cqw`,
+                    borderRadius: `${p.cardRadius}cqw`,
+                    animation: `${name} ${speed}s linear infinite`,
+                    animationDelay: `${-(i * speed) / cards}s`,
+                    backfaceVisibility: "hidden",
+                  }}
+                >
+                  {img ? (
+                    <img
+                      src={img.src}
+                      alt={img.alt ?? ""}
+                      loading="lazy"
+                      decoding="async"
+                      className="h-full w-full object-cover"
+                      draggable={false}
+                    />
+                  ) : null}
+                </div>
+              );
+            }),
+          )}
+        </div>
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+export default ImageStreamHero;
+```
+
+**Usage** (no demo file was included with this component — minimal example):
+```tsx
+import { ImageStreamHero } from "@/components/ui/image-stream-hero";
+
+export default function Hero() {
+  return (
+    <ImageStreamHero
+      images={[
+        { src: "/* project image 1 */" },
+        { src: "/* project image 2 */" },
+        { src: "/* project image 3 */" },
+      ]}
+      className="h-screen w-full bg-black"
+    >
+      <div className="relative z-10 flex h-full items-center justify-center">
+        <h1 className="text-white text-5xl font-bold">Your headline here</h1>
+      </div>
+    </ImageStreamHero>
+  );
+}
+```
+
+---
+
 <!-- Add new components below this line, following the same format -->

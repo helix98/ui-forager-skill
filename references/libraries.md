@@ -41,12 +41,28 @@ Pick 1-3 libraries that match the need before fetching. Most sites expose copy-p
 ## Data visualization / charts
 - **visx** — https://visx.airbnb.tech/ — Airbnb's low-level D3-based React viz primitives. Use for custom/complex charts where you need fine control.
 - **Reaviz** — https://reaviz.dev/ — higher-level ready-made React chart components (bar, line, pie, etc). Use when a standard chart type will do and you don't want to hand-build it with visx.
+- **Liveline** — https://github.com/costcurve/liveline (by Benji Taylor, demo: https://benji.org/liveline) — real-time animated line/multi-series/candlestick charts for React, canvas-rendered at 60fps with zero CSS imports. Reach for this specifically for live/streaming data (price tickers, real-time metrics) rather than static charts — install via npm (`liveline`), not something to scrape from the demo page.
+
+## Standalone effect libraries (GitHub, install via npm — not browsable component sites)
+These are real installable npm packages with source on GitHub, not visual component catalogs like the rest of this file — `web_fetch` their GitHub README for usage, then `npm install` the package rather than copy-pasting source.
+- **Fancy** — https://github.com/danielpetho/fancy — source repo behind fancycomponents.dev (listed above under Animation-forward). Check here for the latest source/examples if the live site's docs are thin on a specific component.
+- **Jakubantalik's effect libraries** — a small family of focused, single-purpose animated React effect packages, each its own npm install:
+  - **Libraries** (`github.com/Jakubantalik/Libraries`) — collection of effects: Border Beam, Liquid Gooey, Thinking Orbs, and more (also individually published, see below).
+  - **border-beam** (`npm install border-beam`) — animated traveling/breathing glow border around any element (cards, buttons, inputs).
+  - **metal-fx** (`npm install metal-fx`) — animated WebGL "liquid metal" ring effect for buttons/chips/icons, with optional proximity reflection on neighboring elements.
+  - **img-fx** (`npm install img-fx`) — animated WebGL shader-driven image reveal/loading mosaic effect.
+  - **thinking-orbs** — dotted thought-orb loading indicators, tuned for AI/agent UI loading states specifically.
+  - **transitions.dev** (`github.com/Jakubantalik/transitions.dev`) — collection of copy-ready CSS-only interaction transitions (card resize, number pop-in, modal open/close, etc.) with a `prefers-reduced-motion` guard built into every snippet; also installable as its own agent skill (`npx skills add Jakubantalik/transitions.dev`) if the user wants it as a separate skill rather than pulled through this one.
+
+## Meta-directories (not a library themselves — use to discover more)
+- **Libraries.dev** — https://github.com/Jakubantalik/Libraries.dev — a directory/index of UI libraries rather than a component source itself. Useful if none of the libraries above fit and a broader search is needed, but don't treat entries found there as pre-vetted — apply the same scrutiny (check stack, deps, license) as any newly discovered library before using.
 
 ## Design systems, templates & assets
 - **Aura** — https://www.aura.build/design-systems — broader than a component library: full design systems, page templates, components, and image/asset packs. Check here when the ask is closer to "give this a whole cohesive look" or "I need a template to start from" rather than a single component.
 
 ## Icons
 - **Reicon** — https://reicon.dev/ — free icon set. Reach for this whenever a component needs icons and the user hasn't specified an icon library (e.g. Lucide) already in use in their project — check their existing imports first so you're not introducing a second icon system.
+- **Icons8** — https://icons8.com/icons — large general-purpose icon library across multiple styles (outline, filled, color, 3D, etc.). Good fallback when Reicon or the project's existing icon set doesn't have a specific icon needed, or when a particular visual style (e.g. flat color icons, isometric) is wanted. Note: Icons8 has both free and paid tiers/licensing depending on icon style and usage — check the specific icon's license terms before using in a commercial project, unlike Reicon which is straightforwardly free.
 
 ## Free stock media (images & video)
 - **Unsplash** — https://unsplash.com/ — free stock photos, generally the best default for polished/editorial-looking photography.
@@ -63,8 +79,10 @@ Pick 1-3 libraries that match the need before fetching. Most sites expose copy-p
 - Need something to feel alive/animated → Magic UI, Aceternity, Motion Primitives, Fancy Components, React Bits
 - Need a solid accessible form/dialog/table → shadcn/ui, Base UI, JollyUI
 - Need a chart → Reaviz (quick) or visx (custom)
+- Need a live/streaming chart → Liveline
 - Need a retro/pixel theme → 8bitcn
 - Need custom animation logic (not a packaged component) → Anime.js
 - Need a whole template/design system, not just one piece → Aura
-- Need icons → Reicon (or whatever the project already uses)
+- Need icons → Reicon first, Icons8 as a broader fallback (check license per icon)
 - Need real photos/video, not placeholders → Unsplash, Pexels, Pixabay, Mixkit
+- Need a focused installable effect (border glow, liquid metal, image reveal, AI loading indicator) → Jakubantalik's effect packages (border-beam, metal-fx, img-fx, thinking-orbs)
