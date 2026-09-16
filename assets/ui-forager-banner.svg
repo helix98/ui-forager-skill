@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">UI Forager</title>
+  <desc id="desc">Find real UI source, adapt it to your project, and ship with confidence.</desc>
+  <rect width="1200" height="360" fill="#101820" />
+  <rect x="0" y="0" width="22" height="360" fill="#F26D5B" />
+  <rect x="22" y="0" width="22" height="360" fill="#74C6B2" />
+  <rect x="44" y="0" width="22" height="360" fill="#F1D45A" />
+  <g transform="translate(112 90)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="0" y="0" width="178" height="178" rx="18" stroke="#E9EEF0" stroke-width="8" />
+    <path d="M89 28v122M28 89h122" stroke="#74C6B2" stroke-width="6" />
+    <path d="M89 45 132 89 89 133 46 89Z" stroke="#F1D45A" stroke-width="8" />
+    <path d="m89 45 16 44-16 44-16-44Z" fill="#F26D5B" stroke="#F26D5B" stroke-width="4" />
+    <circle cx="89" cy="89" r="9" fill="#E9EEF0" stroke="#E9EEF0" stroke-width="4" />
+  </g>
+  <g fill="#E9EEF0" font-family="Arial, Helvetica, sans-serif">
+    <text x="360" y="145" font-size="68" font-weight="700" letter-spacing="2">UI FORAGER</text>
+    <text x="364" y="202" font-size="25" fill="#B9C6C9">Real source. Better fit. Yours to adapt.</text>
+  </g>
+  <g fill="#F26D5B">
+    <rect x="364" y="250" width="76" height="8" rx="4" />
+    <rect x="452" y="250" width="42" height="8" rx="4" />
+    <rect x="506" y="250" width="112" height="8" rx="4" />
+  </g>
+</svg>

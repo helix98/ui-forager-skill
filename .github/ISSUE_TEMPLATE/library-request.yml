@@ -1,0 +1,39 @@
+name: Library or resource request
+description: Suggest a UI library, component source, asset collection, or compatibility reference.
+title: "[Resource] "
+body:
+  - type: input
+    id: source-url
+    attributes:
+      label: Source URL
+      description: Link to the official project, documentation, or repository.
+      placeholder: https://example.com
+    validations:
+      required: true
+  - type: textarea
+    id: use-case
+    attributes:
+      label: What would it help with?
+      description: Name the concrete UI problem, project type, or workflow this source improves.
+      placeholder: This would help with...
+    validations:
+      required: true
+  - type: input
+    id: stack
+    attributes:
+      label: Framework or stack
+      description: Include React, Vue, Svelte, plain HTML, Tailwind, or other relevant assumptions.
+      placeholder: React + Tailwind
+  - type: textarea
+    id: evidence
+    attributes:
+      label: License and quality notes
+      description: Share license, free/pro boundaries, dependencies, accessibility notes, or a demo/source link.
+      placeholder: License, accessibility, dependency, or maintenance notes
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What obvious source does this complement or improve on?
